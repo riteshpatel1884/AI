@@ -1,0 +1,156 @@
+If you're building a **RAG/AI application**, FAISS is great for learning and prototypes, but it becomes limiting when you want to turn the application into a real production system.
+
+### Problems with local vector DBs like FAISS
+
+1. **Not naturally distributed**
+
+   * FAISS generally runs inside your application's machine/container.
+   * If you have multiple backend instances, each may have its own copy of the index.
+   * Keeping them synchronized becomes your problem.
+
+2. **Persistence is your responsibility**
+
+   * You need to save/load the FAISS index yourself.
+   * If the server/container is deleted and you didn't persist the index, your vectors are gone.
+
+3. **Scaling becomes difficult**
+
+   * Suppose you start with 10K documents → easy.
+   * Later you have millions of chunks.
+   * Memory, disk, indexing time, and search performance become infrastructure problems you have to manage.
+
+4. **Updates are inconvenient**
+
+   * Real applications constantly add/update/delete documents.
+   * With a local FAISS index, you have to handle index updates and persistence yourself.
+   * This becomes especially annoying when documents change frequently.
+
+5. **Multi-user / multi-instance issues**
+
+   Imagine:
+
+   ```text
+   User
+     ↓
+   Load Balancer
+     ↓
+   ┌─────────────┐
+   │ Backend 1   │ → FAISS index A
+   ├─────────────┤
+   │ Backend 2   │ → FAISS index B
+   ├─────────────┤
+   │ Backend 3   │ → FAISS index C
+   └─────────────┘
+   ```
+
+   Keeping A, B and C identical is now your responsibility.
+
+6. **Limited database functionality**
+
+   FAISS is fundamentally a **vector similarity search library**, not a complete production database.
+
+   You may need to build additional systems for:
+
+   * metadata filtering
+   * document management
+   * access control
+   * persistence
+   * replication
+   * backups
+   * monitoring
+
+---
+
+## Why use a cloud vector DB?
+
+Examples include Pinecone, Qdrant Cloud, and managed Weaviate.
+
+The architecture becomes:
+
+```text
+             Users
+                ↓
+          Your AI Backend
+                ↓
+       Cloud Vector Database
+                ↓
+       ┌───────────────────┐
+       │ Embeddings        │
+       │ Metadata          │
+       │ Indexes           │
+       │ Filtering         │
+       └───────────────────┘
+```
+
+### Main benefits
+
+| Feature               | FAISS locally            | Cloud Vector DB   |
+| --------------------- | ------------------------ | ----------------- |
+| Setup                 | Easy                     | More setup        |
+| Cost                  | Very low                 | Paid at scale     |
+| Persistence           | You manage it            | Managed           |
+| Scaling               | You manage it            | Much easier       |
+| Multiple servers      | Difficult                | Designed for it   |
+| Metadata filtering    | Limited/custom           | Usually built-in  |
+| Backups               | You manage               | Usually available |
+| High availability     | You build it             | Usually available |
+| Updates/deletes       | More work                | Easier            |
+| Production deployment | More infrastructure work | Much easier       |
+
+### The biggest benefit: scalability
+
+With FAISS:
+
+```text
+Your server
+ ├── Application
+ ├── FAISS
+ ├── Vector index
+ └── Storage
+```
+
+You are responsible for almost everything.
+
+With a managed vector DB:
+
+```text
+Your server
+     ↓
+API
+     ↓
+Cloud Vector DB
+     ├── Storage
+     ├── Indexing
+     ├── Scaling
+     ├── Replication
+     └── Availability
+```
+
+You primarily focus on your **AI application**, rather than building vector infrastructure.
+
+### But don't make the mistake of thinking cloud = automatically better
+
+For a **small RAG project**, FAISS is often the better choice.
+
+If you have:
+
+* 5,000 documents
+* one application server
+* few users
+* relatively static data
+
+then moving to a cloud vector DB may add **cost and complexity without solving a real problem**.
+
+For a production system with:
+
+* millions of vectors
+* frequent document updates
+* many users
+* multiple backend instances
+* high availability requirements
+* metadata filtering
+* independent scaling
+
+then a managed vector database starts making much more sense.
+
+**For your RAG project specifically:** if you're currently using FAISS, I wouldn't remove it just to say "I used a cloud vector DB." A stronger project is to demonstrate **both**: FAISS for local development + Qdrant/Pinecone for production, and explain *why* you switch between them. That shows actual engineering judgment rather than just adding another tool to your resume.
