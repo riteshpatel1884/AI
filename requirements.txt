@@ -14,3 +14,4 @@ uvicorn
 requests
 langgraph
 langsmith
+langchain-tavily
