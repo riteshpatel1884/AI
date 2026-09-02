@@ -15,3 +15,6 @@ requests
 langgraph
 langsmith
 langchain-tavily
+langchain-mcp-adapters
+mcp
+langgraph

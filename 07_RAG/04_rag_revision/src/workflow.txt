@@ -1,0 +1,41 @@
+                 ┌──────────────┐
+                 │    data/     │
+                 │ PDF/TXT/CSV  │
+                 │ Excel/DOCX   │
+                 │ JSON         │
+                 └──────┬───────┘
+                        │
+                        ▼
+              ┌──────────────────┐
+              │ data_loaders.py  │
+              └────────┬─────────┘
+                       │
+                       ▼
+              ┌──────────────────┐
+              │   embedding.py   │
+              │                  │
+              │ Chunking         │
+              │ Embeddings       │
+              └────────┬─────────┘
+                       │
+                       ▼
+              ┌──────────────────┐
+              │ vectorstore.py   │
+              │                  │
+              │ FAISS            │
+              │ metadata.pkl     │
+              └────────┬─────────┘
+                       │
+                       ▼
+                 ┌────────────┐
+                 │ search.py  │
+                 │            │
+                 │ Retrieval  │
+                 │ + Groq LLM │
+                 └─────┬──────┘
+                       │
+                       ▼
+                    Answer
+
+
+# run :python -m src.app
