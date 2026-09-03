@@ -18,3 +18,5 @@ langchain-tavily
 langchain-mcp-adapters
 mcp
 langgraph
+deepagents
+tavily-python
