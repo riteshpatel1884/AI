@@ -21,3 +21,4 @@ langgraph
 deepagents
 tavily-python
 langchain-text-splitters
+pydantic
