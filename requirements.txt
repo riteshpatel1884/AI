@@ -22,3 +22,4 @@ deepagents
 tavily-python
 langchain-text-splitters
 pydantic
+langchainhub
