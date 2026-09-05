@@ -23,3 +23,5 @@ tavily-python
 langchain-text-splitters
 pydantic
 langchainhub
+readability
+trafilatura

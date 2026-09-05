@@ -1,0 +1,8 @@
+https://youtu.be/4RtKGasvNC0?si=I3yXg9Q5YYdyL-MY&t=18025
+
+install rich to see good print result
+
+Workflow
+
+First agent will search and 2nd agent will extract the relevant info from the url 1st tool has provided. 
+
