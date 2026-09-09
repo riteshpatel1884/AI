@@ -1,0 +1,12 @@
+Right now we are able to create multiple chat sesion but when we refresh the tab then all the data get lost.
+
+To fix it we will now integrate the database.
+
+So for this we are using SQLite database: https://pypi.org/project/langgraph-checkpoint-sqlite/
+
+# Changes
+In backend file(chatbot.py)
+->  we will use sqlite instead of MemorySaver()
+
+In app.py
+-> 

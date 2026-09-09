@@ -25,3 +25,5 @@ pydantic
 langchainhub
 readability
 trafilatura
+streamlit
+langgraph-checkpoint-sqlite
