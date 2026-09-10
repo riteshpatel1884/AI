@@ -1,6 +1,6 @@
 import streamlit as st
 import uuid
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
 from chatbot import chatbot, get_all_threads
 
 # ---------------------------------------------------------------------------
@@ -54,19 +54,57 @@ st.markdown("""
         font-size: 0.75rem;
         margin-bottom: 0.5rem;
     }
+    .tool-pill {
+        display: inline-block;
+        background: #0b3b2e;
+        color: #34d399;
+        border: 1px solid #065f46;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        margin: 0 4px 6px 0;
+        font-family: monospace;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
 def load_thread_messages(thread_id):
-    """Pull a thread's message history out of the checkpointer, in UI format."""
+    """Pull a thread's message history out of the checkpointer, in UI format.
+
+    Reconstructs which tools were used for each assistant turn by looking
+    at ToolMessage entries that sit between the triggering AIMessage and
+    the final AIMessage response.
+    """
     config = {"configurable": {"thread_id": thread_id}}
     state = chatbot.get_state(config)
     messages = state.values.get("messages", []) if state.values else []
+
     ui_messages = []
+    pending_tools = []
+
     for m in messages:
-        role = "user" if isinstance(m, HumanMessage) else "assistant"
-        ui_messages.append({"role": role, "content": m.content})
+        if isinstance(m, HumanMessage):
+            ui_messages.append({"role": "user", "content": m.content})
+            pending_tools = []
+
+        elif isinstance(m, ToolMessage):
+            name = getattr(m, "name", None) or "tool"
+            if name not in pending_tools:
+                pending_tools.append(name)
+
+        elif isinstance(m, AIMessage):
+            # Intermediate AIMessages that only request tool calls have no
+            # content and are followed by more turns; only the final
+            # content-bearing AIMessage becomes a rendered assistant turn.
+            if m.content:
+                ui_messages.append({
+                    "role": "assistant",
+                    "content": m.content,
+                    "tools": pending_tools,
+                })
+                pending_tools = []
+
     return ui_messages
 
 
@@ -141,6 +179,16 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
+# Helper: render tool pills
+# ---------------------------------------------------------------------------
+def render_tool_pills(tool_names):
+    if not tool_names:
+        return
+    pills = "".join(f'<span class="tool-pill">🔧 {name}</span>' for name in tool_names)
+    st.markdown(pills, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
 # Render chat history
 # ---------------------------------------------------------------------------
 current_messages = st.session_state.threads[st.session_state.current_thread]
@@ -148,6 +196,8 @@ current_messages = st.session_state.threads[st.session_state.current_thread]
 for msg in current_messages:
     avatar = "🧑‍💻" if msg["role"] == "user" else "🤖"
     with st.chat_message(msg["role"], avatar=avatar):
+        if msg["role"] == "assistant" and msg.get("tools"):
+            render_tool_pills(msg["tools"])
         st.markdown(msg["content"])
 
 # ---------------------------------------------------------------------------
@@ -165,8 +215,10 @@ if user_input:
     config = {"configurable": {"thread_id": st.session_state.current_thread}}
 
     with st.chat_message("assistant", avatar="🤖"):
+        tool_status = st.empty()
         placeholder = st.empty()
         full_response = ""
+        active_tools = []
 
         with st.spinner("Thinking..."):
             for message_chunk, metadata in chatbot.stream(
@@ -174,10 +226,34 @@ if user_input:
                 config=config,
                 stream_mode="messages",
             ):
-                if message_chunk.content:
-                    full_response += message_chunk.content
-                    placeholder.markdown(full_response + "▌")
+                node = metadata.get("langgraph_node")
+
+                if node == "chat_node":
+                    # Tool calls are visible on the AI chunk as soon as the
+                    # LLM decides to invoke one (before execution happens).
+                    for call in getattr(message_chunk, "tool_calls", None) or []:
+                        name = call.get("name")
+                        if name and name not in active_tools:
+                            active_tools.append(name)
+                            with tool_status:
+                                render_tool_pills(active_tools)
+
+                    if message_chunk.content:
+                        full_response += message_chunk.content
+                        placeholder.markdown(full_response + "▌")
+
+                elif node == "tools":
+                    # Actual tool execution result (ToolMessage chunk)
+                    name = getattr(message_chunk, "name", None) or "tool"
+                    if name not in active_tools:
+                        active_tools.append(name)
+                        with tool_status:
+                            render_tool_pills(active_tools)
 
         placeholder.markdown(full_response)
 
-    current_messages.append({"role": "assistant", "content": full_response})
+    current_messages.append({
+        "role": "assistant",
+        "content": full_response,
+        "tools": active_tools,
+    })
