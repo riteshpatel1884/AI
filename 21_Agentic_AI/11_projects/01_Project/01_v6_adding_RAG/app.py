@@ -1,7 +1,9 @@
 import streamlit as st
 import uuid
+import os
+import tempfile
 from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
-from chatbot import chatbot, get_all_threads
+from chatbot import chatbot, get_all_threads, ingest_rag_document
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -64,6 +66,16 @@ st.markdown("""
         font-size: 0.75rem;
         margin: 0 4px 6px 0;
         font-family: monospace;
+    }
+    .doc-pill {
+        display: inline-block;
+        background: #1e2a44;
+        color: #38bdf8;
+        border: 1px solid #1e3a5f;
+        border-radius: 999px;
+        padding: 3px 12px;
+        font-size: 0.8rem;
+        margin-bottom: 0.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -128,6 +140,9 @@ if "current_thread" not in st.session_state:
         st.session_state.threads[new_id] = []
         st.session_state.current_thread = new_id
 
+if "indexed_document" not in st.session_state:
+    st.session_state.indexed_document = None
+
 
 def new_chat():
     new_id = str(uuid.uuid4())[:8]
@@ -165,6 +180,45 @@ with st.sidebar:
             new_chat()
         else:
             st.session_state.current_thread = list(st.session_state.threads.keys())[-1]
+        st.rerun()
+
+    st.divider()
+
+    # -----------------------------------------------------------------
+    # Document upload (RAG)
+    # -----------------------------------------------------------------
+    st.markdown("### 📄 Document")
+
+    if st.session_state.indexed_document:
+        st.markdown(
+            f'<span class="doc-pill">📎 {st.session_state.indexed_document}</span>',
+            unsafe_allow_html=True,
+        )
+
+    uploaded_file = st.file_uploader(
+        "Upload a PDF",
+        type=["pdf"],
+        key="pdf_uploader",
+        label_visibility="collapsed",
+    )
+
+    if uploaded_file is not None and uploaded_file.name != st.session_state.indexed_document:
+        with st.spinner(f"Indexing '{uploaded_file.name}'..."):
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, uploaded_file.name)
+
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+            try:
+                ingest_rag_document(temp_path)
+                st.session_state.indexed_document = uploaded_file.name
+                st.success("Document indexed! Ask away.")
+            except Exception as e:
+                st.error(f"Failed to index document: {e}")
+            finally:
+                os.remove(temp_path)
+
         st.rerun()
 
 # ---------------------------------------------------------------------------

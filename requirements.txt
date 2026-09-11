@@ -27,3 +27,4 @@ readability
 trafilatura
 streamlit
 langgraph-checkpoint-sqlite
+pypdf

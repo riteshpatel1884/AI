@@ -1,7 +1,1 @@
-Till version 4, we dont have any tools, so in this v5 we are adding tools,
-
-Tools we are using
-1. custom tool - calculator
-2. tavily search tool
-3. alphaavantage - stock price - https://www.alphavantage.co/support/#api-key
-4. openweather 
+Now adding RAG, so that user can uplaod any docs and can conversate with it.
