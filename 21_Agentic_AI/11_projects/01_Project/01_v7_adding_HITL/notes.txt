@@ -1,1 +1,3 @@
 a new tool added purchase_stock
+
+for CI/CD deployment watch: https://youtu.be/YIv_GDxJqbA?si=mFDh8WhiYpbOxy9F&t=26241
