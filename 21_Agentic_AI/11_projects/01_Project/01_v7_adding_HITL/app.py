@@ -3,6 +3,7 @@ import uuid
 import os
 import tempfile
 from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
+from langgraph.types import Command
 from chatbot import chatbot, get_all_threads, ingest_rag_document
 
 # ---------------------------------------------------------------------------
@@ -77,6 +78,17 @@ st.markdown("""
         font-size: 0.8rem;
         margin-bottom: 0.5rem;
     }
+    .approval-pill {
+        display: inline-block;
+        background: #3f1d1d;
+        color: #fca5a5;
+        border: 1px solid #7f1d1d;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        margin-bottom: 0.5rem;
+        font-family: monospace;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -120,6 +132,65 @@ def load_thread_messages(thread_id):
     return ui_messages
 
 
+def get_pending_interrupt(thread_id):
+    """Check if a thread's graph is currently paused on an interrupt()
+    (e.g. purchase_stock waiting for human approval) and return the
+    interrupt's payload, or None if the graph isn't paused."""
+    config = {"configurable": {"thread_id": thread_id}}
+    state = chatbot.get_state(config)
+    for task in state.tasks:
+        if task.interrupts:
+            return task.interrupts[0].value
+    return None
+
+
+def render_tool_pills(tool_names):
+    if not tool_names:
+        return
+    pills = "".join(f'<span class="tool-pill">🔧 {name}</span>' for name in tool_names)
+    st.markdown(pills, unsafe_allow_html=True)
+
+
+def stream_and_render(input_data, config, tool_status, placeholder):
+    """Stream a graph invocation (fresh input or a Command(resume=...))
+    and live-render tokens + tool pills into the given placeholders."""
+    full_response = ""
+    active_tools = []
+
+    with st.spinner("Thinking..."):
+        for message_chunk, metadata in chatbot.stream(
+            input_data,
+            config=config,
+            stream_mode="messages",
+        ):
+            node = metadata.get("langgraph_node")
+
+            if node == "chat_node":
+                # Tool calls are visible on the AI chunk as soon as the
+                # LLM decides to invoke one (before execution happens).
+                for call in getattr(message_chunk, "tool_calls", None) or []:
+                    name = call.get("name")
+                    if name and name not in active_tools:
+                        active_tools.append(name)
+                        with tool_status:
+                            render_tool_pills(active_tools)
+
+                if message_chunk.content:
+                    full_response += message_chunk.content
+                    placeholder.markdown(full_response + "▌")
+
+            elif node == "tools":
+                # Actual tool execution result (ToolMessage chunk)
+                name = getattr(message_chunk, "name", None) or "tool"
+                if name not in active_tools:
+                    active_tools.append(name)
+                    with tool_status:
+                        render_tool_pills(active_tools)
+
+    placeholder.markdown(full_response)
+    return full_response, active_tools
+
+
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
@@ -143,6 +214,17 @@ if "current_thread" not in st.session_state:
 if "indexed_document" not in st.session_state:
     st.session_state.indexed_document = None
 
+if "pending_interrupts" not in st.session_state:
+    # A thread whose graph is paused mid-tool-call (e.g. purchase_stock
+    # waiting on human approval) shows up here, survives app restarts
+    # since it's derived straight from the checkpointer.
+    st.session_state.pending_interrupts = {
+        tid: get_pending_interrupt(tid) for tid in st.session_state.threads
+    }
+    st.session_state.pending_interrupts = {
+        tid: val for tid, val in st.session_state.pending_interrupts.items() if val
+    }
+
 
 def new_chat():
     new_id = str(uuid.uuid4())[:8]
@@ -165,8 +247,10 @@ with st.sidebar:
         messages = st.session_state.threads[tid]
         label = messages[0]["content"][:28] + "…" if messages else "New conversation"
         is_active = tid == st.session_state.current_thread
+        awaiting = tid in st.session_state.pending_interrupts
+        icon = "🟢" if is_active else ("🟠" if awaiting else "⚪")
         if st.button(
-            f"{'🟢' if is_active else '⚪'} {label}",
+            f"{icon} {label}",
             key=f"thread_{tid}",
             use_container_width=True,
         ):
@@ -176,6 +260,7 @@ with st.sidebar:
     st.divider()
     if st.button("🗑️ Delete current chat", use_container_width=True):
         del st.session_state.threads[st.session_state.current_thread]
+        st.session_state.pending_interrupts.pop(st.session_state.current_thread, None)
         if not st.session_state.threads:
             new_chat()
         else:
@@ -233,81 +318,91 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Helper: render tool pills
-# ---------------------------------------------------------------------------
-def render_tool_pills(tool_names):
-    if not tool_names:
-        return
-    pills = "".join(f'<span class="tool-pill">🔧 {name}</span>' for name in tool_names)
-    st.markdown(pills, unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------------
 # Render chat history
 # ---------------------------------------------------------------------------
-current_messages = st.session_state.threads[st.session_state.current_thread]
+current_thread = st.session_state.current_thread
+current_messages = st.session_state.threads[current_thread]
+config = {"configurable": {"thread_id": current_thread}}
 
 for msg in current_messages:
     avatar = "🧑‍💻" if msg["role"] == "user" else "🤖"
     with st.chat_message(msg["role"], avatar=avatar):
         if msg["role"] == "assistant" and msg.get("tools"):
             render_tool_pills(msg["tools"])
-        st.markdown(msg["content"])
+        if msg["content"]:
+            st.markdown(msg["content"])
+
+# ---------------------------------------------------------------------------
+# Human-in-the-loop approval card (purchase_stock, etc.)
+# ---------------------------------------------------------------------------
+pending_question = st.session_state.pending_interrupts.get(current_thread)
+
+if pending_question:
+    with st.chat_message("assistant", avatar="🤖"):
+        st.markdown('<span class="approval-pill">⏸️ Awaiting your approval</span>', unsafe_allow_html=True)
+        st.markdown(pending_question)
+
+        col1, col2 = st.columns(2)
+        approve = col1.button("✅ Approve", use_container_width=True, key=f"approve_{current_thread}")
+        decline = col2.button("❌ Decline", use_container_width=True, key=f"decline_{current_thread}")
+
+        if approve or decline:
+            decision = "yes" if approve else "no"
+
+            tool_status = st.empty()
+            placeholder = st.empty()
+            full_response, active_tools = stream_and_render(
+                Command(resume=decision), config, tool_status, placeholder
+            )
+
+            if full_response or active_tools:
+                current_messages.append({
+                    "role": "assistant",
+                    "content": full_response,
+                    "tools": active_tools,
+                })
+
+            del st.session_state.pending_interrupts[current_thread]
+
+            # In case the resumed run immediately hits another interrupt
+            follow_up = get_pending_interrupt(current_thread)
+            if follow_up:
+                st.session_state.pending_interrupts[current_thread] = follow_up
+
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Chat input + streaming response
 # ---------------------------------------------------------------------------
-user_input = st.chat_input("Ask me anything...")
+user_input = st.chat_input(
+    "Approve or decline the pending request above first…" if pending_question else "Ask me anything...",
+    disabled=bool(pending_question),
+)
 
-if user_input:
+if user_input and not pending_question:
     # Show + store user message
     current_messages.append({"role": "user", "content": user_input})
     with st.chat_message("user", avatar="🧑‍💻"):
         st.markdown(user_input)
 
     # Stream assistant response
-    config = {"configurable": {"thread_id": st.session_state.current_thread}}
-
     with st.chat_message("assistant", avatar="🤖"):
         tool_status = st.empty()
         placeholder = st.empty()
-        full_response = ""
-        active_tools = []
+        full_response, active_tools = stream_and_render(
+            {"messages": [HumanMessage(content=user_input)]}, config, tool_status, placeholder
+        )
 
-        with st.spinner("Thinking..."):
-            for message_chunk, metadata in chatbot.stream(
-                {"messages": [HumanMessage(content=user_input)]},
-                config=config,
-                stream_mode="messages",
-            ):
-                node = metadata.get("langgraph_node")
+    if full_response or active_tools:
+        current_messages.append({
+            "role": "assistant",
+            "content": full_response,
+            "tools": active_tools,
+        })
 
-                if node == "chat_node":
-                    # Tool calls are visible on the AI chunk as soon as the
-                    # LLM decides to invoke one (before execution happens).
-                    for call in getattr(message_chunk, "tool_calls", None) or []:
-                        name = call.get("name")
-                        if name and name not in active_tools:
-                            active_tools.append(name)
-                            with tool_status:
-                                render_tool_pills(active_tools)
-
-                    if message_chunk.content:
-                        full_response += message_chunk.content
-                        placeholder.markdown(full_response + "▌")
-
-                elif node == "tools":
-                    # Actual tool execution result (ToolMessage chunk)
-                    name = getattr(message_chunk, "name", None) or "tool"
-                    if name not in active_tools:
-                        active_tools.append(name)
-                        with tool_status:
-                            render_tool_pills(active_tools)
-
-        placeholder.markdown(full_response)
-
-    current_messages.append({
-        "role": "assistant",
-        "content": full_response,
-        "tools": active_tools,
-    })
+    # If a tool (e.g. purchase_stock) paused the graph waiting on a human
+    # decision, surface it and rerun so the approval card shows up.
+    interrupt_value = get_pending_interrupt(current_thread)
+    if interrupt_value:
+        st.session_state.pending_interrupts[current_thread] = interrupt_value
+        st.rerun()
