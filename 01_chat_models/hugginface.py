@@ -13,4 +13,4 @@ model = ChatHuggingFace(llm=llm)
 
 response = model.invoke("Economy of India in 2030 will be ")
 
-print(response.content)
+print(response.
