@@ -3,7 +3,7 @@
 A hands-on, structured learning repository covering the core building blocks of Generative AI application development - from chat models and embeddings to RAG pipelines and vector databases, primarily built with **LangChain**.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
-![LangChain](https://img.shields.io/badge/LangChain-🦜🔗-1C3C3C)
+![LangChain](https://img.shields.io/badge/LangChain-🔗-1C3C3C)
 ![uv](https://img.shields.io/badge/Package%20Manager-uv-DE5FE9)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
@@ -120,3 +120,4 @@ This project is licensed under the **MIT License** - feel free to use and adapt 
 Built while learning and experimenting with the **LangChain** ecosystem and modern GenAI tooling.
 
 If this repo helped you, consider giving it a ⭐!
+
