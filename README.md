@@ -1,4 +1,4 @@
-# 🤖 GenAI
+#  GenAI
 
 A hands-on, structured learning repository covering the core building blocks of Generative AI application development - from chat models and embeddings to RAG pipelines and vector databases, primarily built with **LangChain**.
 
